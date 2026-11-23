@@ -32,8 +32,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
+      - name: Typecheck app
         run: npx tsc --noEmit
+
+      - name: Backend typecheck and tests
+        working-directory: backend
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx vitest run
 
       - name: Generate native Android project
         run: npx expo prebuild --platform android --no-install --clean
