@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "CallMitra AI",
+    "slug": "callmitra-ai",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "callmitra",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#07081F",
+    "ios": {
+      "bundleIdentifier": "com.rashproduction.callmitra",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.rashproduction.callmitra",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#07081F",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.READ_CONTACTS"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#07081F",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "CallMitra AI uses your contacts only when you choose to import them."
+        }
+      ]
+    ]
+  }
+}
