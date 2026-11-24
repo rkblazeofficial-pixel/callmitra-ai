@@ -10,11 +10,11 @@ const JWT = 'test-jwt-secret-test-jwt-secret-1234';
 const WH = 'whsec_test';
 const noon = new Date('2026-11-23T06:30:00Z'); // 12:00 IST
 const cfg = (live: boolean): Config => ({
-  port: 0, liveCallingEnabled: live, supabaseJwtSecret: JWT,
-  thunderphone: { apiKey: 'k', baseUrl: 'x', fromNumber: '+15551234567', webhookSecret: WH, agentId: undefined },
+  port: 0, liveCallingEnabled: live, supabaseUrl: '', databaseUrl: '', supabaseJwtSecret: JWT,
+  thunderphone: { apiKey: 'k', baseUrl: 'x', fromNumber: '+15551234567', webhookSecret: WH, agentId: undefined, agentMap: { rohan: 12 }, allowInline: false },
   limits: { maxCallSeconds: 300, silenceIntervalSeconds: 15, silenceMaxCheckins: 2, dailyCallsPerUser: 2, windowStartHour: 9, windowEndHour: 21, timezone: 'Asia/Kolkata' },
 });
-const token = (sub: string) => new SignJWT({}).setProtectedHeader({ alg: 'HS256' }).setSubject(sub).setExpirationTime('1h').sign(new TextEncoder().encode(JWT));
+const token = (sub: string) => new SignJWT({}).setProtectedHeader({ alg: 'HS256' }).setAudience('authenticated').setSubject(sub).setExpirationTime('1h').sign(new TextEncoder().encode(JWT));
 const payload = (over: any = {}) => ({ recipientName: 'Rahul', phone: '9876543210', script: 'Namaste', language: 'hi', voice: 'rohan', hostName: 'Kamal',
   occasion: 'birthday', idempotencyKey: 'key-00000001', consentConfirmed: true, details: { date: 'Sunday' }, ...over });
 
@@ -50,7 +50,7 @@ describe('POST /v1/calls', () => {
     const r = await post(app, payload(), await token('u1'));
     expect(r.statusCode).toBe(202);
     expect(r.json()).toMatchObject({ mode: 'live', status: 'in_progress' });
-    expect(p.placeCall.mock.calls[0][0]).toMatchObject({ toNumber: '+919876543210', voice: 'rohan', language: 'hi' });
+    expect(p.placeCall.mock.calls[0][0]).toMatchObject({ toNumber: '+919876543210', voice: 'rohan', language: 'hi', agentId: 12 });
   });
   it('does not dial twice for the same idempotency key', async () => {
     const p = provider();
@@ -107,6 +107,20 @@ describe('POST /v1/calls', () => {
     expect(r.statusCode).toBe(502); expect(r.json().code).toBe('managed_number_outbound_pending');
     expect([...store.calls.values()][0].status).toBe('failed');
   });
+  it('two simultaneous requests with the same key dial exactly once', async () => {
+    const p = provider();
+    const app = buildServer({ config: cfg(true), store, provider: p, now: () => noon });
+    const t = await token('u1');
+    const rs = await Promise.all([post(app, payload(), t), post(app, payload(), t), post(app, payload(), t)]);
+    expect(p.placeCall).toHaveBeenCalledTimes(1);
+    expect(rs.filter((r) => r.json().replay).length).toBe(2);
+    expect(store.calls.size).toBe(1);
+  });
+  it('rejects tokens without the authenticated audience (e.g. an anon key)', async () => {
+    const app = buildServer({ config: cfg(false), store, provider: provider(), now: () => noon });
+    const anon = await new SignJWT({ role: 'anon' }).setProtectedHeader({ alg: 'HS256' }).setSubject('u1').setAudience('anon').sign(new TextEncoder().encode(JWT));
+    expect((await post(app, payload(), anon)).statusCode).toBe(401);
+  });
   it('isolates users: one user cannot read another’s call', async () => {
     const app = buildServer({ config: cfg(false), store, provider: provider(), now: () => noon });
     const made = (await post(app, payload(), await token('u1'))).json();
@@ -131,10 +145,21 @@ describe('POST /webhooks/thunderphone', () => {
     expect((await send(app, body, sign(body, t, 'wrong'))).statusCode).toBe(401);
     expect((await send(app, body, sign(body, t - 400))).statusCode).toBe(401);
   });
+  it('does not record an event whose processing failed, so the provider retry is processed', async () => {
+    const store = new MemoryStore();
+    const app = buildServer({ config: cfg(true), store, provider: provider(), now: () => noon });
+    const boom = vi.spyOn(store, 'findCallByProviderId').mockRejectedValueOnce(new Error('db down'));
+    const body = JSON.stringify({ type: 'telephony.complete', event_id: 'e9', data: { call_id: 99, status: 'completed' } });
+    expect((await send(app, body, sign(body, t))).statusCode).toBe(500);
+    expect(await store.hasEvent('e9')).toBe(false);
+    boom.mockRestore();
+    expect((await send(app, body, sign(body, t))).statusCode).toBe(200);
+    expect(await store.hasEvent('e9')).toBe(true);
+  });
   it('updates the call, dedupes events and mirrors provider opt-outs', async () => {
     const store = new MemoryStore(); const p = provider(); p.isOptedOut.mockResolvedValue(true);
     const app = buildServer({ config: cfg(true), store, provider: p, now: () => noon });
-    await store.saveCall({ id: 'c1', userId: 'u1', idempotencyKey: 'k', toNumber: '+919876543210', recipientName: 'R', providerCallId: '99', status: 'in_progress', createdAt: noon.toISOString(), mode: 'live' });
+    await store.createCall({ id: 'c1', userId: 'u1', idempotencyKey: 'k', toNumber: '+919876543210', recipientName: 'R', language: 'hi', voiceId: 'rohan', providerCallId: '99', status: 'in_progress', createdAt: noon.toISOString(), mode: 'live' });
     const body = JSON.stringify({ type: 'telephony.complete', event_id: 'e2', data: { call_id: 99, status: 'completed', end_reason: 'ai_hangup', duration_seconds: 41 } });
     expect((await send(app, body, sign(body, t))).statusCode).toBe(200);
     const row = store.calls.get('c1')!;

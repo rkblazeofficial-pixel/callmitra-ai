@@ -20,7 +20,8 @@ beforeAll(async () => {
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('app.uid', true), '')::uuid $$;
     grant usage on schema auth to authenticated; grant usage on schema public to authenticated;
   `);
-  await db.exec(readFileSync(new URL('../../supabase/migrations/0001_init.sql', import.meta.url), 'utf8'));
+  for (const f of ['0001_init.sql', '0002_store_support.sql'])
+    await db.exec(readFileSync(new URL(`../../supabase/migrations/${f}`, import.meta.url), 'utf8'));
   await db.exec(`grant select, insert, update, delete on all tables in schema public to authenticated;
                  grant usage, select on all sequences in schema public to authenticated;
                  insert into auth.users values ('${A}'),('${B}');`);
@@ -64,6 +65,10 @@ describe('RLS user isolation', () => {
   it('keeps opt-outs private per user but lets the owner manage them', async () => {
     await as(A, `insert into suppression_list (user_id,phone_e164) values ('${A}','+919876543210')`);
     expect((await as(B, 'select * from suppression_list')).rows).toHaveLength(0);
+  });
+  it('keeps webhook_events private', async () => {
+    await db.exec(`insert into webhook_events (event_id) values ('e1')`);
+    expect((await as(A, 'select * from webhook_events')).rows).toHaveLength(0);
   });
   it('lets everyone read reference data', async () => {
     expect((await as(B, 'select * from occasions')).rows.length).toBe(11);

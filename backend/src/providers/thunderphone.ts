@@ -1,6 +1,6 @@
 import { CallProvider, PlaceCallInput, PlaceCallResult, ProviderCall, ProviderError } from './types';
 
-type Opts = { apiKey: string; baseUrl: string; fromNumber: string; agentId?: number; fetchImpl?: typeof fetch };
+type Opts = { apiKey: string; baseUrl: string; fromNumber: string; agentId?: number; allowInline?: boolean; fetchImpl?: typeof fetch };
 
 // Adapter for ThunderPhone's REST API (docs: /api-reference/outbound-calls, /opt-outs, /calls).
 // NOT yet exercised against the live API: the account has no phone number or outbound approval.
@@ -42,8 +42,13 @@ export class ThunderPhoneProvider implements CallProvider {
 
   async placeCall(i: PlaceCallInput): Promise<PlaceCallResult> {
     const base = { from_number: this.o.fromNumber, to_number: i.toNumber, language: i.language, idempotency_key: i.idempotencyKey };
-    const body = this.o.agentId !== undefined
-      ? { ...base, agent_id: this.o.agentId, context: i.prompt }
+    const agentId = i.agentId ?? this.o.agentId;
+    if (agentId === undefined && !this.o.allowInline) {
+      // Fail closed: an inline config has no documented max-duration limit, so a runaway call could not be capped.
+      throw new ProviderError('No saved ThunderPhone agent is configured for this voice. Inline calls cannot enforce a maximum call duration.', 400, 'voice_not_configured', false);
+    }
+    const body = agentId !== undefined
+      ? { ...base, agent_id: agentId, context: i.prompt }
       : {
           ...base,
           config: {

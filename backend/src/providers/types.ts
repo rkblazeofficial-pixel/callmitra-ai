@@ -12,6 +12,7 @@ export type PlaceCallInput = {
   silenceIntervalSeconds: number;
   silenceMaxCheckins: number;
   idempotencyKey: string;
+  agentId?: number; // saved agent to use (carries the enforced duration limit and voice)
 };
 
 export type PlaceCallResult = { providerCallId: string; status: 'initiated' | 'unknown'; replay?: boolean };

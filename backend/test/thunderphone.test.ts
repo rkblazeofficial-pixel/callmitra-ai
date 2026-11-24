@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { ThunderPhoneProvider } from '../src/providers/thunderphone';
 import { ProviderError } from '../src/providers/types';
 
-const mk = (responses: { status: number; body: any }[], agentId?: number) => {
+const mk = (responses: { status: number; body: any }[], agentId?: number, allowInline = true) => {
   const calls: { url: string; init: any }[] = [];
   const f = vi.fn(async (url: any, init: any) => {
     calls.push({ url: String(url), init });
     const r = responses.shift()!;
     return new Response(JSON.stringify(r.body), { status: r.status });
   }) as unknown as typeof fetch;
-  return { p: new ThunderPhoneProvider({ apiKey: 'sk_test', baseUrl: 'https://api.example.test', fromNumber: '+15551234567', agentId, fetchImpl: f }), calls };
+  return { p: new ThunderPhoneProvider({ apiKey: 'sk_test', baseUrl: 'https://api.example.test', fromNumber: '+15551234567', agentId, allowInline, fetchImpl: f }), calls };
 };
 const input = { toNumber: '+919876543210', prompt: 'P', voice: 'rohan', language: 'hi', maxCallSeconds: 300, silenceIntervalSeconds: 15, silenceMaxCheckins: 2, idempotencyKey: 'k1' };
 
@@ -29,6 +29,16 @@ describe('ThunderPhoneProvider (mocked HTTP)', () => {
     await p.placeCall(input);
     const body = JSON.parse(calls[0].init.body);
     expect(body.agent_id).toBe(12); expect(body.context).toBe('P'); expect(body.config).toBeUndefined();
+  });
+  it('refuses to dial inline when no saved agent exists and inline is not allowed (duration cannot be capped)', async () => {
+    const { p, calls } = mk([{ status: 201, body: { call_id: 1 } }], undefined, false);
+    await expect(p.placeCall(input)).rejects.toMatchObject({ code: 'voice_not_configured', retryable: false });
+    expect(calls).toHaveLength(0);
+  });
+  it('a per-call agent id wins over the default agent', async () => {
+    const { p, calls } = mk([{ status: 201, body: { call_id: 1 } }], 12, false);
+    await p.placeCall({ ...input, agentId: 31 });
+    expect(JSON.parse(calls[0].init.body).agent_id).toBe(31);
   });
   it('flags idempotent replays and ambiguous 202', async () => {
     expect((await mk([{ status: 200, body: { call_id: 7, idempotent_replay: true } }]).p.placeCall(input)).replay).toBe(true);
