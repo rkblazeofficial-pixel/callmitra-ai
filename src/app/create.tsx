@@ -1,11 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Pressable, Switch, Text, View } from 'react-native';
 import { Back, Btn, Card, Chip, DemoBanner, Field, H1, H2, Label, Muted, Screen } from '@/components/ui';
 import { Gender, LANGUAGES, LanguageId, OCCASIONS, OccasionId, SPEEDS, STYLES, voicesFor } from '@/lib/data';
 import { generate, Generated } from '@/lib/generator';
-import { setPendingCall } from '@/lib/pending';
+import { CloudError, cloud, cloudEnabled, newIdempotencyKey, useCallMode } from '@/lib/cloud';
+import { saveLiveCall, setPendingCall } from '@/lib/pending';
 import { isValidPhone, maskPhone, useStore } from '@/lib/store';
 import { C } from '@/lib/theme';
 
@@ -13,7 +14,10 @@ const STEPS = ['Occasion', 'Recipient', 'Your message', 'Script', 'Voice', 'Prev
 
 export default function Create() {
   const params = useLocalSearchParams<{ occasion?: string; text?: string }>();
-  const { s, saveDraft, isOptedOut } = useStore();
+  const { s, saveDraft, isOptedOut, addOptOut } = useStore();
+  const mode = useCallMode();
+  const [busy, setBusy] = useState(false);
+  const keyRef = useRef(newIdempotencyKey());
   const [step, setStep] = useState(params.occasion ? 1 : 0);
   const [occasion, setOccasion] = useState<OccasionId>((params.occasion as OccasionId) || 'birthday');
   const [name, setName] = useState('');
@@ -52,11 +56,33 @@ export default function Create() {
     const c = s.contacts.find((x) => x.id === id)!;
     setName(c.name); setPhone(c.phone); setRelation(c.relation); setConsent(c.consent);
   };
-  const start = () => {
+  const SPEED: Record<string, number> = { Slow: 0.9, Normal: 1.0, Fast: 1.15 };
+  const start = async () => {
+    if (busy) return;
     if (!consent) return setErr('Please confirm the recipient has agreed to receive this call.');
     if (isOptedOut(phone)) return setErr('This number is blocked (opted out).');
-    setPendingCall({ recipient: name.trim(), phone, occasion, language, voiceName: voice?.name ?? 'Default', gender, script });
-    router.replace('/call/demo');
+    const base = { recipient: name.trim(), phone, occasion, language, voiceName: voice?.name ?? 'Default', gender, script };
+    if (!cloudEnabled) { setPendingCall(base); return router.replace('/call/demo'); }
+    setBusy(true); setErr(null);
+    try {
+      const r = await cloud.startCall({
+        recipientName: name.trim(), phone, relation: relation || undefined, occasion: occLabel, occasionId: occasion, script,
+        language: LANGUAGES.find((l) => l.id === language)!.code, languageLabel: langLabel, voice: voice?.id ?? '', voiceSpeed: SPEED[speed],
+        hostName: s.user?.name ?? '', details: { date: gen?.facts.date, time: gen?.facts.time, venue: gen?.facts.venue }, qa: gen?.qa ?? [],
+        consentConfirmed: consent, idempotencyKey: keyRef.current,
+      });
+      keyRef.current = newIdempotencyKey();
+      setPendingCall(base);
+      if (r.mode === 'demo') return router.replace('/call/demo'); // the server says no real call was placed
+      saveLiveCall(r.callId, base);
+      router.replace({ pathname: '/call/[id]', params: { id: r.callId } });
+    } catch (e) {
+      const ce = e as CloudError;
+      // Keep the same key only if no response arrived (the call may exist): a retry then cannot dial twice.
+      if (!ce.isNetwork) keyRef.current = newIdempotencyKey();
+      if (ce.code === 'opted_out') addOptOut(phone);
+      setErr(ce.isNetwork ? `${ce.message} If a call was already started it will not be repeated.` : ce.message);
+    } finally { setBusy(false); }
   };
 
   return (
@@ -176,7 +202,9 @@ export default function Create() {
 
       {step === 6 && (
         <>
-          <DemoBanner text="DEMO: confirming runs a clearly labelled simulation. No phone call is made and nothing is billed." />
+          {mode === 'live'
+            ? <Card style={{ borderColor: C.warn }}><Text style={{ color: C.warn, fontWeight: '700' }}>This places a REAL phone call.</Text><Muted>The recipient will get an AI-voiced call right away. It cannot be hung up from here once it starts.</Muted></Card>
+            : <DemoBanner text="DEMO: confirming runs a clearly labelled simulation. No phone call is made and nothing is billed." />}
           <Card>
             <Row k="To" v={`${name} · ${maskPhone(phone)}`} />
             <Row k="Occasion" v={occLabel} />
@@ -188,7 +216,7 @@ export default function Create() {
             <Text style={{ color: C.text, flex: 1, lineHeight: 21 }}>{name} has agreed to receive this AI-assisted call, and it is a personal, non-promotional message.</Text>
           </View>
           {err ? <Text style={{ color: C.danger, marginBottom: 10 }}>{err}</Text> : null}
-          <Btn title="Run demo call" icon="play" onPress={start} />
+          <Btn title={mode === 'live' ? 'Place real call now' : 'Run demo call'} icon="play" onPress={start} loading={busy} disabled={mode === 'checking'} />
           <Btn title="Schedule (needs cloud backend)" variant="ghost" disabled style={{ marginTop: 10 }} />
         </>
       )}

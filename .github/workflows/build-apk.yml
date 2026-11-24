@@ -32,8 +32,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck app
-        run: npx tsc --noEmit
+      - name: Typecheck and test app
+        run: |
+          npx tsc --noEmit
+          npx vitest run
 
       - name: Backend typecheck and tests
         working-directory: backend
@@ -53,6 +55,11 @@ jobs:
         run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
         env:
           GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g
+          # Public values only (set under Settings > Secrets and variables > Actions > Variables).
+          # Leave unset to build the local DEMO app. NEVER put a secret here: these ship inside the APK.
+          EXPO_PUBLIC_API_URL: ${{ vars.EXPO_PUBLIC_API_URL }}
+          EXPO_PUBLIC_SUPABASE_URL: ${{ vars.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
 
       - name: Collect APK
         run: |

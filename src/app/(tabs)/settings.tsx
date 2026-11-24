@@ -2,6 +2,8 @@ import { router } from 'expo-router';
 import { Alert, Switch, Text, View } from 'react-native';
 import { Btn, Card, Chip, DemoBanner, H1, H2, Label, Muted, Screen } from '@/components/ui';
 import { LANGUAGES, SPEEDS, STYLES } from '@/lib/data';
+import { cloud } from '@/lib/cloud';
+import { ModeBanner } from '@/components/ModeBanner';
 import { maskPhone, useStore } from '@/lib/store';
 import { C } from '@/lib/theme';
 
@@ -12,7 +14,7 @@ export default function Settings() {
     <Screen>
       <H1>Settings</H1>
       <Muted style={{ marginBottom: 14 }}>{s.user?.name} · {s.user?.email}</Muted>
-      <DemoBanner />
+      <ModeBanner />
 
       <Card>
         <H2 style={{ marginBottom: 10 }}>Language & voice</H2>
@@ -60,8 +62,8 @@ export default function Settings() {
       </Card>
 
       <View style={{ gap: 10 }}>
-        <Btn title="Log out" variant="ghost" icon="log-out-outline" onPress={() => { logOut(); router.replace('/'); }} />
-        <Btn title="Delete all data on this device" variant="danger" onPress={() => Alert.alert('Delete everything?', 'This removes your account, contacts, drafts and history from this device.', [{ text: 'Cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { resetAll(); router.replace('/'); } }])} />
+        <Btn title="Log out" variant="ghost" icon="log-out-outline" onPress={async () => { await cloud.signOut(); logOut(); router.replace('/'); }} />
+        <Btn title="Delete all data on this device" variant="danger" onPress={() => Alert.alert('Delete everything?', 'This removes your account, contacts, drafts and history from this device.', [{ text: 'Cancel' }, { text: 'Delete', style: 'destructive', onPress: async () => { await cloud.signOut(); resetAll(); router.replace('/'); } }])} />
       </View>
     </Screen>
   );

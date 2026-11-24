@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Image, Pressable, ScrollView, Text, View } from 'react-native';
-import { Btn, Card, Chip, DemoBanner, Empty, Field, H1, H2, Muted, Screen } from '@/components/ui';
+import { Btn, Card, Chip, Empty, Field, H1, H2, Muted, Screen } from '@/components/ui';
+import { ModeBanner } from '@/components/ModeBanner';
 import { OCCASIONS } from '@/lib/data';
 import { useStore } from '@/lib/store';
 import { C } from '@/lib/theme';
@@ -26,7 +27,7 @@ export default function Home() {
         <Image source={require('../../../assets/images/callmitra-icon.png')} style={{ width: 52, height: 52 }} resizeMode="contain" />
       </View>
       <View style={{ height: 14 }} />
-      <DemoBanner />
+      <ModeBanner />
       <Btn title="Create New AI Call" icon="call-outline" onPress={() => start()} />
 
       <Card style={{ marginTop: 16 }}>

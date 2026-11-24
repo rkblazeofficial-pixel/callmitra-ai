@@ -10,7 +10,7 @@ export type Contact = {
 export type CallRecord = {
   id: string; recipient: string; phone: string; occasion: OccasionId; language: LanguageId;
   voiceName: string; gender: Gender; createdAt: string; durationSec: number;
-  status: 'demo_completed' | 'demo_cancelled'; outcome: string; script: string;
+  status: 'demo_completed' | 'demo_cancelled' | 'completed' | 'failed'; outcome: string; script: string;
 };
 export type Draft = { id: string; occasion: OccasionId; text: string; script: string; updatedAt: string };
 export type Prefs = { language: LanguageId; gender: Gender; style: Style; speed: Speed; notifications: boolean };
@@ -46,6 +46,7 @@ type Ctx = {
   signUp: (name: string, email: string, password: string) => string | null;
   logIn: (email: string, password: string) => string | null;
   resetPassword: (email: string, password: string) => string | null;
+  setCloudUser: (name: string, email: string) => void;
   logOut: () => void;
   updateUser: (patch: Partial<User>) => void;
   setPrefs: (p: Partial<Prefs>) => void;
@@ -116,6 +117,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       up((p) => ({ ...p, user: p.user ? { ...p.user, password } : p.user }));
       return null;
     },
+    setCloudUser: (name, email) => up((p) => {
+      const e = email.trim().toLowerCase();
+      const same = p.user?.email === e;
+      return { ...p, loggedIn: true, user: { id: same ? p.user!.id : uid(), name: same ? p.user!.name : name, email: e, password: '', phone: same ? p.user!.phone : undefined, profileDone: same ? p.user!.profileDone : false } };
+    }),
     logOut: () => up((p) => ({ ...p, loggedIn: false })),
     updateUser: (patch) => up((p) => ({ ...p, user: p.user ? { ...p.user, ...patch } : p.user })),
     setPrefs: (pp) => up((p) => ({ ...p, prefs: { ...p.prefs, ...pp } })),
